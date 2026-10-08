@@ -113,6 +113,8 @@ void function InitModMenu()
 	RuiSetString( Hud_GetRui( Hud_GetChild( file.menu, "SwtBtnShowFilter" ) ), "buttonText", "" )
 	RuiSetString( Hud_GetRui( Hud_GetChild( file.menu, "HideCVButton" ) ), "buttonText", "" )
 	RuiSetString( Hud_GetRui( Hud_GetChild( file.menu, "BtnListReverse" ) ), "buttonText", "" )
+
+	ControllerModList_Init()
 }
 
 // EVENTS
@@ -127,6 +129,8 @@ void function OnModMenuOpened()
 
 	RegisterButtonPressedCallback( MOUSE_WHEEL_UP, OnScrollUp )
 	RegisterButtonPressedCallback( MOUSE_WHEEL_DOWN, OnScrollDown )
+	ControllerModList_RegisterPad()
+	thread ControllerModList_FocusFirst()
 }
 
 void function OnModMenuClosed()
@@ -135,6 +139,7 @@ void function OnModMenuClosed()
 	{
 		DeregisterButtonPressedCallback( MOUSE_WHEEL_UP, OnScrollUp )
 		DeregisterButtonPressedCallback( MOUSE_WHEEL_DOWN, OnScrollDown )
+		ControllerModList_DeregisterPad()
 	}
 	catch ( ex )
 	{
@@ -719,3 +724,135 @@ void function ReloadMods()
 	ClientCommand( "uiscript_reset" )
 }
 
+
+// Controller support. The mod buttons have no navigation links and the list
+// scrolls only with the mouse wheel or its arrow buttons, so with a controller
+// nothing in it could be selected. The first mod on screen is focused when
+// the menu opens, up and down move between mods (skipping the load priority
+// headers, scrolling at the edges), and the shoulder buttons page the list.
+// The buttons' own navigation links point at themselves so the engine does
+// not also move focus.
+
+void function ControllerModList_Init()
+{
+	foreach ( var panel in file.panels )
+	{
+		var button = Hud_GetChild( panel, "BtnMod" )
+		button.SetNavUp( button )
+		button.SetNavDown( button )
+	}
+	AddMenuFooterOption( file.menu, BUTTON_SHOULDER_LEFT, "#LB_BUTTON_BROWSE_PREVPAGE", "", ControllerModList_PageUp )
+	AddMenuFooterOption( file.menu, BUTTON_SHOULDER_RIGHT, "#RB_BUTTON_BROWSE_NEXTPAGE", "", ControllerModList_PageDown )
+}
+
+void function ControllerModList_RegisterPad()
+{
+	RegisterButtonPressedCallback( BUTTON_DPAD_UP, ControllerModList_Up )
+	RegisterButtonPressedCallback( STICK1_UP, ControllerModList_Up )
+	RegisterButtonPressedCallback( BUTTON_DPAD_DOWN, ControllerModList_Down )
+	RegisterButtonPressedCallback( STICK1_DOWN, ControllerModList_Down )
+}
+
+void function ControllerModList_DeregisterPad()
+{
+	DeregisterButtonPressedCallback( BUTTON_DPAD_UP, ControllerModList_Up )
+	DeregisterButtonPressedCallback( STICK1_UP, ControllerModList_Up )
+	DeregisterButtonPressedCallback( BUTTON_DPAD_DOWN, ControllerModList_Down )
+	DeregisterButtonPressedCallback( STICK1_DOWN, ControllerModList_Down )
+}
+
+bool function ControllerModList_IsMod( int index )
+{
+	return index >= 0 && index < file.mods.len() && !file.mods[ index ].isHeader
+}
+
+int function ControllerModList_FocusedSlot()
+{
+	var focus = GetFocus()
+	for ( int slot = 0; slot < file.panels.len(); slot++ )
+	{
+		if ( Hud_GetChild( file.panels[ slot ], "BtnMod" ) == focus )
+			return slot
+	}
+	return -1
+}
+
+bool function ControllerModList_FocusIndex( int index )
+{
+	if ( !ControllerModList_IsMod( index ) || index < file.scrollOffset || index >= file.scrollOffset + PANELS_LEN )
+		return false
+	Hud_SetFocused( Hud_GetChild( file.panels[ index - file.scrollOffset ], "BtnMod" ) )
+	return true
+}
+
+void function ControllerModList_ScrollTo( int offset )
+{
+	file.scrollOffset = offset
+	// Clamps the offset and redraws the rows.
+	ValidateScrollOffset()
+}
+
+void function ControllerModList_FocusFirstVisible()
+{
+	for ( int i = file.scrollOffset; i < file.scrollOffset + PANELS_LEN; i++ )
+	{
+		if ( ControllerModList_FocusIndex( i ) )
+			return
+	}
+}
+
+// The engine gives the menu its previous focus after MENU_OPEN; wait a frame.
+void function ControllerModList_FocusFirst()
+{
+	WaitFrame()
+	if ( ControllerModList_FocusedSlot() < 0 )
+		ControllerModList_FocusFirstVisible()
+}
+
+void function ControllerModList_Move( int direction )
+{
+	int slot = ControllerModList_FocusedSlot()
+	if ( slot < 0 )
+	{
+		ControllerModList_FocusFirstVisible()
+		return
+	}
+	int target = -1
+	for ( int i = slot + file.scrollOffset + direction; i >= 0 && i < file.mods.len(); i += direction )
+	{
+		if ( ControllerModList_IsMod( i ) )
+		{
+			target = i
+			break
+		}
+	}
+	if ( target < 0 )
+		return
+	if ( target < file.scrollOffset )
+		ControllerModList_ScrollTo( target - 1 ) // keep its header in view
+	else if ( target >= file.scrollOffset + PANELS_LEN )
+		ControllerModList_ScrollTo( target - PANELS_LEN + 1 )
+	ControllerModList_FocusIndex( target )
+}
+
+void function ControllerModList_Up( var button )
+{
+	ControllerModList_Move( -1 )
+}
+
+void function ControllerModList_Down( var button )
+{
+	ControllerModList_Move( 1 )
+}
+
+void function ControllerModList_PageUp( var button )
+{
+	ControllerModList_ScrollTo( file.scrollOffset - ( PANELS_LEN - 1 ) )
+	ControllerModList_FocusFirstVisible()
+}
+
+void function ControllerModList_PageDown( var button )
+{
+	ControllerModList_ScrollTo( file.scrollOffset + ( PANELS_LEN - 1 ) )
+	ControllerModList_FocusFirstVisible()
+}

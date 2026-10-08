@@ -217,6 +217,8 @@ void function InitModMenu()
 			OnFiltersChange()
 		}
 	)
+
+	ControllerModSettings_Init()
 }
 
 // "PureModulo"
@@ -840,6 +842,7 @@ void function OnModMenuOpened()
 		RegisterButtonPressedCallback( MOUSE_WHEEL_UP, OnScrollUp )
 		RegisterButtonPressedCallback( MOUSE_WHEEL_DOWN, OnScrollDown )
 		RegisterButtonPressedCallback( MOUSE_LEFT, OnClick )
+		ControllerModSettings_RegisterPad()
 
 		OnFiltersChange()
 		file.isOpen = true
@@ -879,6 +882,7 @@ void function OnModMenuClosed()
 	DeregisterButtonPressedCallback( MOUSE_WHEEL_UP, OnScrollUp )
 	DeregisterButtonPressedCallback( MOUSE_WHEEL_DOWN, OnScrollDown )
 	DeregisterButtonPressedCallback( MOUSE_LEFT, OnClick )
+	ControllerModSettings_DeregisterPad()
 
 	file.scrollOffset = 0
 	UpdateListSliderPosition()
@@ -1401,4 +1405,179 @@ Color function StringToColors( string colorString, string delimiter = " " )
 void function TryUpdateModSettingLists()
 {
 	UpdateList()
+}
+
+
+// Controller support. Focus starts in the search box and nothing links it to
+// the setting rows, and the list scrolls only with the mouse wheel, so with a
+// controller no setting could be reached. Up and down move between rows that
+// have a control (skipping mod and category names, scrolling at the edges),
+// up from the first returns to the search box, and the shoulder buttons page
+// the list. The controls' own navigation links point at themselves so the
+// engine does not also move focus.
+
+array<string> function ControllerModSettings_ControlNames()
+{
+	return [ "EnumSelectButton", "Slider", "TextEntrySetting", "ColorPickerButton", "OpenCustomMenu" ]
+}
+
+void function ControllerModSettings_Init()
+{
+	var search = Hud_GetChild( file.menu, "BtnModsSearch" )
+	search.SetNavUp( search )
+	search.SetNavDown( search )
+	foreach ( var panel in file.modPanels )
+	{
+		foreach ( string name in ControllerModSettings_ControlNames() )
+		{
+			var child = Hud_GetChild( panel, name )
+			child.SetNavUp( child )
+			child.SetNavDown( child )
+		}
+	}
+	AddMenuFooterOption( file.menu, BUTTON_SHOULDER_LEFT, "#LB_BUTTON_BROWSE_PREVPAGE", "", ControllerModSettings_PageUp )
+	AddMenuFooterOption( file.menu, BUTTON_SHOULDER_RIGHT, "#RB_BUTTON_BROWSE_NEXTPAGE", "", ControllerModSettings_PageDown )
+}
+
+void function ControllerModSettings_RegisterPad()
+{
+	RegisterButtonPressedCallback( BUTTON_DPAD_UP, ControllerModSettings_Up )
+	RegisterButtonPressedCallback( STICK1_UP, ControllerModSettings_Up )
+	RegisterButtonPressedCallback( BUTTON_DPAD_DOWN, ControllerModSettings_Down )
+	RegisterButtonPressedCallback( STICK1_DOWN, ControllerModSettings_Down )
+}
+
+void function ControllerModSettings_DeregisterPad()
+{
+	DeregisterButtonPressedCallback( BUTTON_DPAD_UP, ControllerModSettings_Up )
+	DeregisterButtonPressedCallback( STICK1_UP, ControllerModSettings_Up )
+	DeregisterButtonPressedCallback( BUTTON_DPAD_DOWN, ControllerModSettings_Down )
+	DeregisterButtonPressedCallback( STICK1_DOWN, ControllerModSettings_Down )
+}
+
+bool function ControllerModSettings_IsSettingRow( int index )
+{
+	if ( index < 0 || index >= file.filteredList.len() )
+		return false
+	ConVarData c = file.filteredList[ index ]
+	return !c.isEmptySpace && !c.isModName && !c.isCategoryName
+}
+
+// The control a visible row offers to the pad, or null.
+var function ControllerModSettings_RowControl( int slot )
+{
+	if ( slot < 0 || slot >= BUTTONS_PER_PAGE || !ControllerModSettings_IsSettingRow( slot + file.scrollOffset ) )
+		return null
+	var panel = file.modPanels[ slot ]
+	foreach ( string name in ControllerModSettings_ControlNames() )
+	{
+		var child = Hud_GetChild( panel, name )
+		if ( Hud_IsVisible( child ) )
+			return child
+	}
+	return null
+}
+
+int function ControllerModSettings_FocusedSlot()
+{
+	var focus = GetFocus()
+	if ( focus == null )
+		return -1
+	for ( int slot = 0; slot < file.modPanels.len(); slot++ )
+	{
+		var panel = file.modPanels[ slot ]
+		foreach ( string name in ControllerModSettings_ControlNames() )
+		{
+			if ( Hud_GetChild( panel, name ) == focus )
+				return slot
+		}
+		if ( Hud_GetChild( panel, "ResetModToDefault" ) == focus )
+			return slot
+	}
+	return -1
+}
+
+void function ControllerModSettings_ScrollTo( int offset )
+{
+	int maxOffset = file.filteredList.len() - BUTTONS_PER_PAGE
+	if ( offset > maxOffset )
+		offset = maxOffset
+	if ( offset < 0 )
+		offset = 0
+	file.scrollOffset = offset
+	// Rebuilds the rows and focuses the search box.
+	UpdateList()
+	UpdateListSliderPosition()
+}
+
+bool function ControllerModSettings_FocusIndex( int index )
+{
+	if ( index < file.scrollOffset || index >= file.scrollOffset + BUTTONS_PER_PAGE )
+		return false
+	var control = ControllerModSettings_RowControl( index - file.scrollOffset )
+	if ( control == null )
+		return false
+	Hud_SetFocused( control )
+	return true
+}
+
+void function ControllerModSettings_Move( int direction )
+{
+	int slot = ControllerModSettings_FocusedSlot()
+	if ( slot < 0 && direction < 0 )
+		return
+	int from = slot < 0 ? file.scrollOffset - 1 : slot + file.scrollOffset
+	int target = -1
+	for ( int i = from + direction; i >= 0 && i < file.filteredList.len(); i += direction )
+	{
+		if ( ControllerModSettings_IsSettingRow( i ) )
+		{
+			target = i
+			break
+		}
+	}
+	if ( target < 0 )
+	{
+		if ( direction < 0 )
+		{
+			ControllerModSettings_ScrollTo( 0 )
+			Hud_SetFocused( Hud_GetChild( file.menu, "BtnModsSearch" ) )
+		}
+		return
+	}
+	if ( target < file.scrollOffset )
+		ControllerModSettings_ScrollTo( target - 1 )
+	else if ( target >= file.scrollOffset + BUTTONS_PER_PAGE )
+		ControllerModSettings_ScrollTo( target - BUTTONS_PER_PAGE + 1 )
+	ControllerModSettings_FocusIndex( target )
+}
+
+void function ControllerModSettings_Up( var button )
+{
+	ControllerModSettings_Move( -1 )
+}
+
+void function ControllerModSettings_Down( var button )
+{
+	ControllerModSettings_Move( 1 )
+}
+
+void function ControllerModSettings_Page( int delta )
+{
+	ControllerModSettings_ScrollTo( file.scrollOffset + delta )
+	for ( int i = file.scrollOffset; i < file.scrollOffset + BUTTONS_PER_PAGE; i++ )
+	{
+		if ( ControllerModSettings_FocusIndex( i ) )
+			return
+	}
+}
+
+void function ControllerModSettings_PageUp( var button )
+{
+	ControllerModSettings_Page( -( BUTTONS_PER_PAGE - 1 ) )
+}
+
+void function ControllerModSettings_PageDown( var button )
+{
+	ControllerModSettings_Page( BUTTONS_PER_PAGE - 1 )
 }
