@@ -724,7 +724,6 @@ void function ReloadMods()
 	ClientCommand( "uiscript_reset" )
 }
 
-
 // Controller support. The mod buttons have no navigation links and the list
 // scrolls only with the mouse wheel or its arrow buttons, so with a controller
 // nothing in it could be selected. The first mod on screen is focused when

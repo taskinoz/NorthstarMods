@@ -324,8 +324,10 @@ void function OnControllerLeft( var button )
 		return
 	// The filter switch may use left/right to change its value, so it keeps them.
 	var focus = GetFocus()
-	if ( focus != Hud_GetChild( file.menu, "BtnModeSearch" ) && focus != Hud_GetChild( file.menu, "BtnModeLabel" ) &&
-		focus != Hud_GetChild( file.menu, "BtnModeFiltersClear" ) )
+	if (
+		focus != Hud_GetChild( file.menu, "BtnModeSearch" ) && focus != Hud_GetChild( file.menu, "BtnModeLabel" ) &&
+		focus != Hud_GetChild( file.menu, "BtnModeFiltersClear" )
+	)
 		return
 	int slot = file.focusedSlot
 	int count = VisibleSlotCount()
@@ -417,20 +419,16 @@ int function NextEnabledSlot( int slot, int direction )
 // The search box, filter switch and clear button stack vertically.
 void function MoveInSideColumn( int direction )
 {
-	array<var> column = [
-		Hud_GetChild( file.menu, "BtnModeSearch" ),
-		Hud_GetChild( file.menu, "SwtModeLabel" ),
-		Hud_GetChild( file.menu, "BtnModeFiltersClear" )
-	]
+	array<var> column = [ Hud_GetChild( file.menu, "BtnModeSearch" ), Hud_GetChild( file.menu, "SwtModeLabel" ), Hud_GetChild( file.menu, "BtnModeFiltersClear" ) ]
 	var focus = GetFocus()
 	if ( focus == Hud_GetChild( file.menu, "BtnModeLabel" ) )
-		focus = column[0]
+		focus = column[ 0 ]
 	int index = column.find( focus )
 	if ( index < 0 )
 		return
 	int next = index + direction
 	if ( next >= 0 && next < column.len() )
-		Hud_SetFocused( column[next] )
+		Hud_SetFocused( column[ next ] )
 }
 
 void function OnControllerPageDown( var button )

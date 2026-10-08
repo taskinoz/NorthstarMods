@@ -1407,7 +1407,6 @@ void function TryUpdateModSettingLists()
 	UpdateList()
 }
 
-
 // Controller support. Focus starts in the search box and nothing links it to
 // the setting rows, and the list scrolls only with the mouse wheel, so with a
 // controller no setting could be reached. Up and down move between rows that
